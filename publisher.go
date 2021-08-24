@@ -5,16 +5,26 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/Monibuca/engine/v3"
 	"github.com/Monibuca/utils/v3/codec"
 )
 
+func SplitStreamPath(streamPath string) string {
+	if strings.Contains(streamPath, "_s_") {
+		split := strings.Split(streamPath, "_s_")
+		return split[0]
+	} else {
+		return streamPath
+	}
+}
 func PublishFlvFile(streamPath string) error {
 	flvPath := filepath.Join(config.Path, streamPath+".flv")
 	os.MkdirAll(filepath.Dir(flvPath), 0755)
 	if file, err := os.Open(flvPath); err == nil {
+		streamPath = SplitStreamPath(streamPath)
 		stream := Stream{
 			Type:       "FlvFile",
 			StreamPath: streamPath,
@@ -29,7 +39,7 @@ func PublishFlvFile(streamPath string) error {
 				if t, timestamp, payload, err := codec.ReadFLVTag(file); err == nil {
 					switch t {
 					case codec.FLV_TAG_TYPE_AUDIO:
-						at.PushByteStream(timestamp,payload)
+						at.PushByteStream(timestamp, payload)
 					case codec.FLV_TAG_TYPE_VIDEO:
 						if timestamp != 0 {
 							if lastTime == 0 {

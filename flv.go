@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	. "github.com/Monibuca/engine/v3"
 	. "github.com/Monibuca/utils/v3"
@@ -26,17 +27,23 @@ func getDuration(file FileWr) uint32 {
 	}
 	return 0
 }
+
 func SaveFlv(streamPath string, append bool) error {
+
 	flag := os.O_CREATE
-	filePath := filepath.Join(config.Path, streamPath+".flv")
-	if append && !Exist(filePath) {
-		append = false
+	timeObj := time.Now()
+	flvName := "/" + timeObj.Format("2006010215") + ".flv"
+	filePath := filepath.Join(config.Path, streamPath+flvName)
+	append = false
+	if Exist(filePath) {
+		append = true
 	}
 	if append {
 		flag = flag | os.O_RDWR | os.O_APPEND
 	} else {
 		flag = flag | os.O_TRUNC | os.O_WRONLY
 	}
+
 	var file FileWr
 	var err error
 	if ExtraConfig.CreateFileFn == nil {
@@ -71,7 +78,7 @@ func SaveFlv(streamPath string, append bool) error {
 					codec.WriteFLVTag(file, codec.FLV_TAG_TYPE_AUDIO, 0, at.ExtraData)
 				}
 				codec.WriteFLVTag(file, codec.FLV_TAG_TYPE_AUDIO, ts+offsetTime, audio.Payload)
-				p.OnAudio = func(ts uint32,audio *AudioPack) {
+				p.OnAudio = func(ts uint32, audio *AudioPack) {
 					codec.WriteFLVTag(file, codec.FLV_TAG_TYPE_AUDIO, ts+offsetTime, audio.Payload)
 				}
 			}

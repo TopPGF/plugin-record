@@ -2,6 +2,7 @@ package record
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -9,14 +10,16 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/Monibuca/engine/v3"
 	. "github.com/Monibuca/utils/v3"
 )
 
 var config struct {
-	Path        string
-	AutoRecord  bool
+	Path       string
+	Append     bool
+	AutoRecord bool
 }
 var recordings sync.Map
 
@@ -34,7 +37,7 @@ type FileWr interface {
 }
 
 var ExtraConfig struct {
-	CreateFileFn func(filename string) (FileWr,error)
+	CreateFileFn     func(filename string) (FileWr, error)
 	AutoRecordFilter func(stream string) bool
 }
 
@@ -51,7 +54,9 @@ func init() {
 	})
 }
 func run() {
+
 	go AddHook(HOOK_PUBLISH, onPublish)
+	recordTicket()
 	os.MkdirAll(config.Path, 0755)
 	http.HandleFunc("/vod/", VodHandler)
 	http.HandleFunc("/api/record/flv/list", func(w http.ResponseWriter, r *http.Request) {
@@ -83,14 +88,24 @@ func run() {
 	http.HandleFunc("/api/record/flv/stop", func(w http.ResponseWriter, r *http.Request) {
 		CORS(w, r)
 		if streamPath := r.URL.Query().Get("streamPath"); streamPath != "" {
-			filePath := filepath.Join(config.Path, streamPath+".flv")
-			if stream, ok := recordings.Load(filePath); ok {
-				output := stream.(*Subscriber)
-				output.Close()
+			hasStream := false
+			filePath := filepath.Join(config.Path, streamPath)
+			recordings.Range(func(key, stream interface{}) bool {
+				streamPath := fmt.Sprintf("%v", key)
+				if strings.Contains(streamPath, filePath) {
+					hasStream = true
+					output := stream.(*Subscriber)
+					output.Close()
+					recordings.Delete(key)
+				}
+				return true
+			})
+			if hasStream {
 				w.Write([]byte("success"))
 			} else {
 				w.Write([]byte("no query stream"))
 			}
+
 		} else {
 			w.Write([]byte("no such stream"))
 		}
@@ -128,8 +143,37 @@ func run() {
 
 func onPublish(p *Stream) {
 	if config.AutoRecord || (ExtraConfig.AutoRecordFilter != nil && ExtraConfig.AutoRecordFilter(p.StreamPath)) {
-		SaveFlv(p.StreamPath, false)
+		SaveFlv(p.StreamPath, config.Append)
 	}
+}
+
+func recordTicket() {
+	ticker := time.NewTicker(time.Second)
+	go func() {
+		for _ = range ticker.C {
+			timeObj := time.Now()
+			//fmt.Printf("ticked at %v", timeObj)
+			if timeObj.Format("0405") == "0000" {
+				//if timeObj.Format("05") == "00" {
+				recordings.Range(func(key, stream interface{}) bool {
+					streamPath := fmt.Sprintf("%v", key)
+					streamPathSplit := strings.Split(streamPath, "/")
+					if len(streamPathSplit) != 4 {
+						return true
+					}
+					streamPath = streamPathSplit[1] + "/" + streamPathSplit[2]
+					if err := SaveFlv(streamPath, false); err != nil {
+						fmt.Println("SaveFlv " + streamPath + " error," + err.Error())
+					} else {
+						output := stream.(*Subscriber)
+						output.Close()
+						recordings.Delete(key)
+					}
+					return true
+				})
+			}
+		}
+	}()
 }
 
 func tree(dstPath string, level int) (files []*FlvFileInfo, err error) {
