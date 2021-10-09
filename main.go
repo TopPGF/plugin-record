@@ -147,28 +147,50 @@ func onPublish(p *Stream) {
 	}
 }
 
+//recordTicket 定时拉起新流写入新文件
 func recordTicket() {
 	ticker := time.NewTicker(time.Second)
 	go func() {
 		for _ = range ticker.C {
 			timeObj := time.Now()
-			//fmt.Printf("ticked at %v", timeObj)
+			//每小时保存
 			if timeObj.Format("0405") == "0000" {
 				//if timeObj.Format("05") == "00" {
 				recordings.Range(func(key, stream interface{}) bool {
 					streamPath := fmt.Sprintf("%v", key)
+					fmt.Println("recordTicket do " + streamPath)
+					subscriber := stream.(*Subscriber)
+					if subscriber == nil {
+						recordings.Delete(key)
+						fmt.Println("SaveFlv " + streamPath + " subscriber is nil")
+						return true
+					}
+					if subscriber.Context == nil {
+						recordings.Delete(key)
+						fmt.Println("SaveFlv " + streamPath + " subscriber Context is nil")
+						return true
+					}
+					if subscriber.Context.Err() != nil {
+						subscriber.Close()
+						recordings.Delete(key)
+						fmt.Println("SaveFlv " + streamPath + " subscriber is close")
+						//return true
+					}
+
 					streamPathSplit := strings.Split(streamPath, "/")
 					if len(streamPathSplit) != 4 {
 						return true
 					}
 					streamPath = streamPathSplit[1] + "/" + streamPathSplit[2]
-					if err := SaveFlv(streamPath, false); err != nil {
-						fmt.Println("SaveFlv " + streamPath + " error," + err.Error())
-					} else {
-						output := stream.(*Subscriber)
-						output.Close()
-						recordings.Delete(key)
-					}
+					go func() {
+						if err := SaveFlv(streamPath, false); err != nil {
+							fmt.Println("SaveFlv " + streamPath + " error," + err.Error())
+						} else {
+							output := stream.(*Subscriber)
+							output.Close()
+							recordings.Delete(key)
+						}
+					}()
 					return true
 				})
 			}

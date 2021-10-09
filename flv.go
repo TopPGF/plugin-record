@@ -1,6 +1,8 @@
 package record
 
 import (
+	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -57,11 +59,29 @@ func SaveFlv(streamPath string, append bool) error {
 	} else {
 		file, err = ExtraConfig.CreateFileFn(filePath)
 	}
+	stream, has := recordings.Load(filePath)
+	if has {
+		subscriber := stream.(*Subscriber)
+		if subscriber == nil {
+			recordings.Delete(filePath)
+			fmt.Println("subscriber is nil clear recordings")
+		} else {
+			if subscriber.Context.Err() != nil {
+				subscriber.Close()
+				recordings.Delete(filePath)
+				fmt.Println("subscriber is close clear recordings")
+			} else {
+				err = errors.New(filePath + "Recording")
+				return err
+			}
+		}
+	}
 	// return avformat.WriteFLVTag(file, packet)
 	p := Subscriber{
 		ID:   filePath,
 		Type: "FlvRecord",
 	}
+
 	var offsetTime uint32
 	if append {
 		offsetTime = getDuration(file)
@@ -84,6 +104,7 @@ func SaveFlv(streamPath string, append bool) error {
 			}
 			p.OnVideo = func(ts uint32, video *VideoPack) {
 				if !append {
+					fmt.Println("------vt.ExtraData.Payload len------", len(vt.ExtraData.Payload))
 					codec.WriteFLVTag(file, codec.FLV_TAG_TYPE_VIDEO, 0, vt.ExtraData.Payload)
 				}
 				codec.WriteFLVTag(file, codec.FLV_TAG_TYPE_VIDEO, ts+offsetTime, video.Payload)
